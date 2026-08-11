@@ -3,11 +3,20 @@ name: App
 on:
   push:
     paths-ignore:
-      - '.github/ISSUE_TEMPLATE'
+      - '.github/ISSUE_TEMPLATE/**'
+  pull_request:
+    paths-ignore:
+      - '.github/ISSUE_TEMPLATE/**'
+  workflow_dispatch:
+
+concurrency:
+  group: app-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -15,11 +24,48 @@ jobs:
         with:
           submodules: 'recursive'
           fetch-depth: 0
+
+      - name: Check hardening invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+
+          server = Path('server/src/main/java/rikka/shizuku/server/ShizukuService.java').read_text()
+          settings = Path('settings.gradle').read_text()
+          shell = Path('manager/src/main/java/moe/shizuku/manager/shell/ShellTutorialActivity.kt').read_text()
+          signing = Path('signing.gradle').read_text()
+
+          checks = {
+              'attach captures existing client': 'ClientRecord clientRecord = clientManager.findClient(callingUid, callingPid);' in server,
+              'attach double-checks under lock': server.count('clientRecord = clientManager.findClient(callingUid, callingPid);') >= 2,
+              'local API flag is null-safe': '"true".equalsIgnoreCase(props.getProperty("api.useLocal"))' in settings,
+              'local API dir fails closed': 'api.useLocal=true requires api.dir' in settings,
+              'local properties stream is scoped': 'propFile.withInputStream { props.load(it) }' in settings,
+              'Rish createDocument null is explicit': 'Unable to create document for $name' in shell,
+              'Rish output null is explicit': 'Unable to open output stream for $name' in shell,
+              'Rish output stream is scoped': 'output.use' in shell,
+              'Rish asset stream is scoped': 'assets.open(name).use' in shell,
+              'signing properties stream is scoped': 'ksFile.withInputStream { props.load(it) }' in signing,
+              'partial signing config fails closed': 'signing.properties missing required keys' in signing,
+              'missing keystore fails closed': 'Keystore file does not exist' in signing,
+          }
+
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+              print(f"{'PASS' if ok else 'FAIL'}: {name}")
+          if failed:
+              raise SystemExit('hardening invariant failure: ' + ', '.join(failed))
+          PY
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
+
       - name: Write key
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
         run: |
@@ -28,6 +74,7 @@ jobs:
           echo KEYSTORE_ALIAS_PASSWORD='${{ secrets.KEYSTORE_ALIAS_PASSWORD }}' >> signing.properties
           echo KEYSTORE_FILE=../key.jks >> signing.properties
           echo ${{ secrets.KEYSTORE }} | base64 --decode > key.jks
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -35,16 +82,28 @@ jobs:
           build-scan-publish: true
           build-scan-terms-of-use-url: "https://gradle.com/terms-of-service"
           build-scan-terms-of-use-agree: "yes"
+
       - name: Build with Gradle
         id: buildWithGradle
+        shell: bash
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           echo 'android.sdk.channel=3' >> gradle.properties
           echo 'android.native.buildOutput=verbose' >> gradle.properties
           echo 'org.gradle.caching=true' >> gradle.properties
           echo 'org.gradle.parallel=true' >> gradle.properties
           ./gradlew :manager:assemble
-          releaseName=`ls manager/build/outputs/apk/release/shizuku*-v*-release.apk | awk -F '(/|-release.apk)' '{print $6}'` && echo "releaseName=$releaseName" >> $GITHUB_OUTPUT
+
+          shopt -s nullglob
+          release_apks=(manager/build/outputs/apk/release/shizuku*-v*-release.apk)
+          if (( ${#release_apks[@]} != 1 )); then
+            echo "Expected exactly one release APK, found ${#release_apks[@]}" >&2
+            exit 1
+          fi
+          release_name=$(basename "${release_apks[0]}" -release.apk)
+          echo "releaseName=$release_name" >> "$GITHUB_OUTPUT"
+
       - name: Upload release
         if: success()
         uses: actions/upload-artifact@v4
@@ -52,3 +111,4 @@ jobs:
           name: ${{ steps.buildWithGradle.outputs.releaseName }}
           path: "manager/build/outputs"
           compression-level: 9
+          if-no-files-found: error
