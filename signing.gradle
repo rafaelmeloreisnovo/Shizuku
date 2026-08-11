@@ -1,14 +1,32 @@
 def ksFile = rootProject.file('signing.properties')
 def props = new Properties()
-if (ksFile.canRead()) {
-    props.load(new FileInputStream(ksFile))
 
-    if (props != null) {
-        android.signingConfigs.sign.storeFile file(props['KEYSTORE_FILE'])
-        android.signingConfigs.sign.storePassword props['KEYSTORE_PASSWORD']
-        android.signingConfigs.sign.keyAlias props['KEYSTORE_ALIAS']
-        android.signingConfigs.sign.keyPassword props['KEYSTORE_ALIAS_PASSWORD']
+if (ksFile.canRead()) {
+    ksFile.withInputStream { props.load(it) }
+
+    def requiredKeys = [
+            'KEYSTORE_FILE',
+            'KEYSTORE_PASSWORD',
+            'KEYSTORE_ALIAS',
+            'KEYSTORE_ALIAS_PASSWORD'
+    ]
+    def missingKeys = requiredKeys.findAll { key ->
+        def value = props.getProperty(key)
+        value == null || value.trim().isEmpty()
     }
+    if (!missingKeys.isEmpty()) {
+        throw new GradleException("signing.properties missing required keys: ${missingKeys.join(', ')}")
+    }
+
+    def storeFile = file(props.getProperty('KEYSTORE_FILE'))
+    if (!storeFile.isFile()) {
+        throw new GradleException("Keystore file does not exist: ${storeFile}")
+    }
+
+    android.signingConfigs.sign.storeFile storeFile
+    android.signingConfigs.sign.storePassword props.getProperty('KEYSTORE_PASSWORD')
+    android.signingConfigs.sign.keyAlias props.getProperty('KEYSTORE_ALIAS')
+    android.signingConfigs.sign.keyPassword props.getProperty('KEYSTORE_ALIAS_PASSWORD')
 } else {
     android.signingConfigs.sign.storeFile = android.signingConfigs.debug.storeFile
     android.signingConfigs.sign.storePassword = android.signingConfigs.debug.storePassword
