@@ -36,14 +36,21 @@ jobs:
           server = Path('server/src/main/java/rikka/shizuku/server/ShizukuService.java').read_text()
           settings = Path('settings.gradle').read_text()
           shell = Path('manager/src/main/java/moe/shizuku/manager/shell/ShellTutorialActivity.kt').read_text()
+          signing = Path('signing.gradle').read_text()
 
           checks = {
               'attach captures existing client': 'ClientRecord clientRecord = clientManager.findClient(callingUid, callingPid);' in server,
               'attach double-checks under lock': server.count('clientRecord = clientManager.findClient(callingUid, callingPid);') >= 2,
               'local API flag is null-safe': '"true".equalsIgnoreCase(props.getProperty("api.useLocal"))' in settings,
               'local API dir fails closed': 'api.useLocal=true requires api.dir' in settings,
-              'Rish output stream is scoped': 'openOutputStream(target)?.use' in shell,
+              'local properties stream is scoped': 'propFile.withInputStream { props.load(it) }' in settings,
+              'Rish createDocument null is explicit': 'Unable to create document for $name' in shell,
+              'Rish output null is explicit': 'Unable to open output stream for $name' in shell,
+              'Rish output stream is scoped': 'output.use' in shell,
               'Rish asset stream is scoped': 'assets.open(name).use' in shell,
+              'signing properties stream is scoped': 'ksFile.withInputStream { props.load(it) }' in signing,
+              'partial signing config fails closed': 'signing.properties missing required keys' in signing,
+              'missing keystore fails closed': 'Keystore file does not exist' in signing,
           }
 
           failed = [name for name, ok in checks.items() if not ok]
