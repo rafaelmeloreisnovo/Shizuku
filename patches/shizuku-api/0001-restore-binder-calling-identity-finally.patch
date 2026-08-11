@@ -1,0 +1,27 @@
+From: RAFAELIA audit
+Subject: [NOT-APPLIED] Restore Binder calling identity on transact exception
+Status: PROPOSED_ONLY / BLOCKED_EXTERNAL_SUBMODULE / claim_allowed=false
+Target observed: RikkaApps/Shizuku-API @ a27f6e4151ba7b39965ca47edb2bf0aeed7102e5
+
+This patch is intentionally stored as evidence in the parent repository and is NOT
+applied to the pinned submodule. It must be replayed against a controlled/upstream
+Shizuku-API revision and tested before the parent submodule pointer is updated.
+
+--- a/server-shared/src/main/java/rikka/shizuku/server/Service.java
++++ b/server-shared/src/main/java/rikka/shizuku/server/Service.java
+@@
+-        try {
+-            long id = Binder.clearCallingIdentity();
+-            targetBinder.transact(targetCode, newData, reply, targetFlags);
+-            Binder.restoreCallingIdentity(id);
+-        } finally {
++        try {
++            long id = Binder.clearCallingIdentity();
++            try {
++                targetBinder.transact(targetCode, newData, reply, targetFlags);
++            } finally {
++                Binder.restoreCallingIdentity(id);
++            }
++        } finally {
+             newData.recycle();
+         }
