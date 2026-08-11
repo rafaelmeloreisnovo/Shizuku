@@ -57,11 +57,13 @@ class ShellTutorialActivity : AppBarActivity() {
                         doc,
                         "application/octet-stream",
                         name
-                    ) ?: return@runCatching
+                    ) ?: error("Unable to create document for $name")
 
-                    cr.openOutputStream(target)?.use { output ->
+                    val output = cr.openOutputStream(target)
+                        ?: error("Unable to open output stream for $name")
+                    output.use {
                         assets.open(name).use { input ->
-                            input.copyTo(output)
+                            input.copyTo(it)
                         }
                     }
                 }.onFailure {
