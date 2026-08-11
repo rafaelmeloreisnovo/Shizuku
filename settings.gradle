@@ -52,10 +52,12 @@ def props = new Properties()
 if (propFile.canRead()) {
     props.load(new FileInputStream(propFile))
 
-    if (props != null) {
-        if (props["api.useLocal"].equals("true")) {
-            root = props["api.dir"]
+    if ("true".equalsIgnoreCase(props.getProperty("api.useLocal"))) {
+        def apiDir = props.getProperty("api.dir")
+        if (apiDir == null || apiDir.trim().isEmpty()) {
+            throw new GradleException("api.useLocal=true requires api.dir in local.properties")
         }
+        root = apiDir
     }
 }
 
