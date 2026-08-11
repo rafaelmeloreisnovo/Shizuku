@@ -198,7 +198,7 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
         int callingPid = Binder.getCallingPid();
         int callingUid = Binder.getCallingUid();
         boolean isManager;
-        ClientRecord clientRecord = null;
+        ClientRecord clientRecord = clientManager.findClient(callingUid, callingPid);
 
         List<String> packages = PackageManagerApis.getPackagesForUidNoThrow(callingUid);
         if (!packages.contains(requestPackageName)) {
@@ -208,9 +208,12 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
 
         isManager = MANAGER_APPLICATION_ID.equals(requestPackageName);
 
-        if (clientManager.findClient(callingUid, callingPid) == null) {
+        if (clientRecord == null) {
             synchronized (this) {
-                clientRecord = clientManager.addClient(callingUid, callingPid, application, requestPackageName, apiVersion);
+                clientRecord = clientManager.findClient(callingUid, callingPid);
+                if (clientRecord == null) {
+                    clientRecord = clientManager.addClient(callingUid, callingPid, application, requestPackageName, apiVersion);
+                }
             }
             if (clientRecord == null) {
                 LOGGER.w("Add client failed");
