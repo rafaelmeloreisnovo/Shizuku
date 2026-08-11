@@ -3,6 +3,7 @@ package moe.shizuku.manager.shell
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
+import android.util.Log
 import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import moe.shizuku.manager.Helps
@@ -19,8 +20,9 @@ class ShellTutorialActivity : AppBarActivity() {
 
     companion object {
 
-        private val SH_NAME = "rish"
-        private val DEX_NAME = "rish_shizuku.dex"
+        private const val TAG = "ShellTutorialActivity"
+        private const val SH_NAME = "rish"
+        private const val DEX_NAME = "rish_shizuku.dex"
     }
 
     private val openDocumentsTree =
@@ -49,8 +51,21 @@ class ShellTutorialActivity : AppBarActivity() {
             }
 
             fun writeToDocument(name: String) {
-                DocumentsContract.createDocument(contentResolver, doc, "application/octet-stream", name)?.runCatching {
-                    cr.openOutputStream(this)?.let { assets.open(name).copyTo(it) }
+                runCatching {
+                    val target = DocumentsContract.createDocument(
+                        cr,
+                        doc,
+                        "application/octet-stream",
+                        name
+                    ) ?: return@runCatching
+
+                    cr.openOutputStream(target)?.use { output ->
+                        assets.open(name).use { input ->
+                            input.copyTo(output)
+                        }
+                    }
+                }.onFailure {
+                    Log.w(TAG, "Failed to export $name", it)
                 }
             }
 
