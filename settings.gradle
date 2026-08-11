@@ -50,7 +50,7 @@ def propFile = file('local.properties')
 def props = new Properties()
 
 if (propFile.canRead()) {
-    props.load(new FileInputStream(propFile))
+    propFile.withInputStream { props.load(it) }
 
     if ("true".equalsIgnoreCase(props.getProperty("api.useLocal"))) {
         def apiDir = props.getProperty("api.dir")
